@@ -368,6 +368,20 @@ body {
   background: var(--line-strong);
 }
 
+/* mobile org: horizontal tick from the branch rail to each child card */
+.rail-item {
+  position: relative;
+}
+.rail-item::before {
+  content: "";
+  position: absolute;
+  left: -1rem;
+  top: 50%;
+  width: 1rem;
+  height: 2px;
+  background: var(--line-strong);
+}
+
 /* status dot */
 .status-dot {
   position: relative;

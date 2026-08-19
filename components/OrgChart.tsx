@@ -216,46 +216,49 @@ function NodeCard({
   id,
   small = false,
   big = false,
+  fluid = false,
   selected,
   onSelect,
-}: { id: string; small?: boolean; big?: boolean } & SelectProps) {
+}: { id: string; small?: boolean; big?: boolean; fluid?: boolean } & SelectProps) {
   const a = AGENTS[id];
   return (
     <button
       data-node
       data-active={selected === id}
       onClick={() => onSelect(id)}
-      className={`node-card card flex items-center gap-2.5 text-left ${
-        small ? "px-3 py-2.5" : big ? "px-5 py-3.5" : "px-4 py-3"
+      className={`node-card card flex items-center text-left ${
+        fluid ? "w-full" : ""
+      } ${big ? "gap-3" : "gap-2.5"} ${
+        small ? "px-3 py-2.5" : big ? "px-6 py-4" : "px-4 py-3"
       }`}
     >
       <span
         className={`flex shrink-0 items-center justify-center rounded-lg text-accent-ink ${
-          small ? "h-7 w-7" : big ? "h-10 w-10" : "h-8 w-8"
+          small ? "h-7 w-7" : big ? "h-12 w-12 rounded-xl" : "h-8 w-8"
         }`}
         style={{
           background: "color-mix(in srgb, var(--accent) 12%, transparent)",
         }}
       >
-        <a.icon className={small ? "h-3.5 w-3.5" : big ? "h-5 w-5" : "h-4 w-4"} />
+        <a.icon className={small ? "h-3.5 w-3.5" : big ? "h-6 w-6" : "h-4 w-4"} />
       </span>
       <span className="min-w-0">
         <span
           className={`block whitespace-nowrap font-display font-semibold leading-tight ${
-            small ? "text-[13px]" : big ? "text-base" : "text-sm"
+            small ? "text-[13px]" : big ? "text-lg" : "text-sm"
           }`}
         >
           {a.name}
         </span>
         <span
           className={`block whitespace-nowrap text-muted ${
-            big ? "text-xs" : "text-[11px]"
+            big ? "text-[13px]" : "text-[11px]"
           }`}
         >
           {a.title}
         </span>
       </span>
-      {!a.human && <span className="status-dot ml-1 shrink-0" aria-hidden />}
+      {!a.human && <span className="status-dot ml-auto shrink-0" aria-hidden />}
     </button>
   );
 }
@@ -299,6 +302,11 @@ export default function OrgChart() {
   const [stage, setStage] = useState(0);
   const stageRef = useRef(-1);
   const agent = AGENTS[selected];
+  // when the tree shrinks to fit, let the root card shrink less so the
+  // "You" node stays visually prominent (stem alignment preserved via
+  // bottom-center origin)
+  const rootScale =
+    fit.scale > 0 ? Math.min(1.35, Math.max(1, 1 / fit.scale)) : 1;
 
   // scale the tree down so it always fits the viewport — no inner scrolling
   useEffect(() => {
@@ -328,93 +336,114 @@ export default function OrgChart() {
     ).matches;
     const mm = gsap.matchMedia(root);
 
-    mm.add("(min-width: 768px)", () => {
-      if (reduced) {
-        setStage(STAGES.length - 1);
-        return;
-      }
-      const tree = treeRef.current!;
-      const you = tree.querySelector(":scope > li > button");
-      const branches = gsap.utils.toArray<HTMLElement>("[data-branch]", tree);
+    // Defer trigger creation past StrictMode's synchronous mount → cleanup →
+    // remount, which otherwise creates/reverts a pinned ScrollTrigger twice
+    // and can leave the pin dead with every tween frozen at its start state.
+    // (setTimeout rather than rAF so it still runs in a background tab.)
+    const timer = setTimeout(() => {
+      mm.add("(min-width: 768px)", () => {
+        if (reduced) {
+          setStage(STAGES.length - 1);
+          return;
+        }
+        const tree = treeRef.current!;
+        const you = tree.querySelector("[data-root] [data-node]");
+        const branches = gsap.utils.toArray<HTMLElement>("[data-branch]", tree);
 
-      gsap.set(branches, {
-        autoAlpha: 0,
-        y: -28,
-        scale: 0.92,
-        transformOrigin: "top center",
-      });
+        gsap.set(branches, {
+          autoAlpha: 0,
+          y: -28,
+          scale: 0.92,
+          transformOrigin: "top center",
+        });
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: root.current,
-          start: "top top",
-          end: "+=1800",
-          pin: true,
-          scrub: 0.6,
-          anticipatePin: 1,
-          onUpdate(self) {
-            const s = Math.min(
-              STAGES.length - 1,
-              Math.floor(self.progress * (STAGES.length + 0.4))
-            );
-            if (s !== stageRef.current) {
-              stageRef.current = s;
-              setStage(s);
-              setSelected(STAGES[s].focus);
-            }
-          },
-        },
-      });
-
-      tl.from(you, { scale: 0.5, autoAlpha: 0, duration: 0.5, ease: "back.out(1.7)" })
-        .to({}, { duration: 0.25 });
-
-      branches.forEach((b) => {
-        tl.to(b, {
-          autoAlpha: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.5,
-          ease: "power2.out",
-        })
-          .from(
-            b.querySelectorAll("[data-node]"),
-            {
-              y: 16,
-              autoAlpha: 0,
-              stagger: 0.08,
-              duration: 0.35,
-              ease: "power2.out",
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: root.current,
+            start: "top top",
+            end: "+=1800",
+            pin: true,
+            scrub: 0.6,
+            anticipatePin: 1,
+            onUpdate(self) {
+              const s = Math.min(
+                STAGES.length - 1,
+                Math.floor(self.progress * (STAGES.length + 0.4))
+              );
+              if (s !== stageRef.current) {
+                stageRef.current = s;
+                setStage(s);
+                setSelected(STAGES[s].focus);
+              }
             },
-            "<0.1"
-          )
-          .to({}, { duration: 0.3 });
+          },
+        });
+
+        tl.fromTo(
+          you,
+          { scale: 0.5, autoAlpha: 0 },
+          { scale: 1, autoAlpha: 1, duration: 0.5, ease: "back.out(1.7)" }
+        ).to({}, { duration: 0.25 });
+
+        branches.forEach((b) => {
+          tl.to(b, {
+            autoAlpha: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.5,
+            ease: "power2.out",
+          })
+            .fromTo(
+              b.querySelectorAll("[data-node]"),
+              { y: 16, autoAlpha: 0 },
+              {
+                y: 0,
+                autoAlpha: 1,
+                stagger: 0.08,
+                duration: 0.35,
+                ease: "power2.out",
+              },
+              "<0.1"
+            )
+            .to({}, { duration: 0.3 });
+        });
+      });
+
+      mm.add("(max-width: 767px)", () => {
+        gsap.fromTo(
+          "[data-mobile-org] [data-node]",
+          { y: 26, opacity: 0, scale: 0.94 },
+          {
+            scrollTrigger: { trigger: root.current, start: "top 65%" },
+            y: 0,
+            opacity: 1,
+            scale: 1,
+            duration: 0.7,
+            stagger: 0.05,
+            ease: "back.out(1.6)",
+          }
+        );
+      });
+
+      mm.add("all", () => {
+        gsap.fromTo(
+          "[data-org-panel]",
+          { y: 30, opacity: 0 },
+          {
+            scrollTrigger: { trigger: root.current, start: "top 60%" },
+            y: 0,
+            opacity: 1,
+            duration: 0.8,
+            ease: "power3.out",
+          }
+        );
       });
     });
 
-    mm.add("(max-width: 767px)", () => {
-      gsap.from("[data-mobile-org] [data-node]", {
-        scrollTrigger: { trigger: root.current, start: "top 65%" },
-        y: 26,
-        opacity: 0,
-        scale: 0.94,
-        duration: 0.7,
-        stagger: 0.05,
-        ease: "back.out(1.6)",
-      });
-    });
-
-    mm.add("all", () => {
-      gsap.from("[data-org-panel]", {
-        scrollTrigger: { trigger: root.current, start: "top 60%" },
-        y: 30,
-        opacity: 0,
-        duration: 0.8,
-        ease: "power3.out",
-      });
-    });
-
-    return () => mm.revert();
+    return () => {
+      clearTimeout(timer);
+      mm.revert();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -484,7 +513,15 @@ export default function OrgChart() {
             }}
           >
             <li>
-              <NodeCard id="you" big selected={selected} onSelect={setSelected} />
+              <div
+                data-root
+                style={{
+                  transform: `scale(${rootScale})`,
+                  transformOrigin: "bottom center",
+                }}
+              >
+                <NodeCard id="you" big selected={selected} onSelect={setSelected} />
+              </div>
               <div className="stem" />
               <ul>
                 <BranchLi mgr="cto" kids={ENG} selected={selected} onSelect={setSelected} />
@@ -498,33 +535,43 @@ export default function OrgChart() {
       </div>
 
       {/* Mobile: stacked branches — no scrolling, no scaling */}
-      <div data-mobile-org className="mt-12 flex flex-col items-center gap-5 md:hidden">
-        <NodeCard id="you" selected={selected} onSelect={setSelected} />
-        <div className="grid w-full max-w-md gap-6 sm:max-w-2xl sm:grid-cols-2">
-          {[
-            { mgr: "cto", kids: ENG },
-            { mgr: "mkt", kids: MKT },
-            { mgr: "support", kids: SUP },
-            { mgr: "data", kids: DATA },
-          ].map(({ mgr, kids }) => (
-            <div key={mgr} className="flex flex-col gap-2.5">
-              <NodeCard id={mgr} selected={selected} onSelect={setSelected} />
-              <div
-                className="ml-5 flex flex-col items-start gap-2.5 border-l-2 pl-4"
-                style={{ borderColor: "var(--line-strong)" }}
-              >
-                {kids.map((id) => (
-                  <NodeCard
-                    key={id}
-                    id={id}
-                    small
-                    selected={selected}
-                    onSelect={setSelected}
-                  />
-                ))}
+      <div data-mobile-org className="mt-10 flex flex-col items-center md:hidden">
+        <div className="w-full max-w-md sm:max-w-2xl">
+          <div className="mx-auto flex w-full max-w-sm flex-col items-center">
+            <NodeCard id="you" big fluid selected={selected} onSelect={setSelected} />
+            <div
+              className="h-7 w-0.5"
+              style={{ background: "var(--line-strong)" }}
+            />
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 sm:gap-x-8">
+            {[
+              { mgr: "cto", kids: ENG },
+              { mgr: "mkt", kids: MKT },
+              { mgr: "support", kids: SUP },
+              { mgr: "data", kids: DATA },
+            ].map(({ mgr, kids }) => (
+              <div key={mgr} className="flex flex-col gap-2.5">
+                <NodeCard id={mgr} fluid selected={selected} onSelect={setSelected} />
+                <div
+                  className="ml-6 flex flex-col gap-2.5 border-l-2 pl-4"
+                  style={{ borderColor: "var(--line-strong)" }}
+                >
+                  {kids.map((id) => (
+                    <div key={id} className="rail-item">
+                      <NodeCard
+                        id={id}
+                        small
+                        fluid
+                        selected={selected}
+                        onSelect={setSelected}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
