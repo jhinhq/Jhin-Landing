@@ -42,3 +42,7 @@ yarn-error.log*
 # local tool state
 /.openai/
 /.vite/
+
+# npm is the canonical package manager for this repo
+pnpm-lock.yaml
+yarn.lock
