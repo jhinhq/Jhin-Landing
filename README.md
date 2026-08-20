@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://jhin.ai">jhin.ai</a> ·
-  <a href="https://github.com/jhin-ai/jhin">Jhin project repo</a>
+  <a href="https://github.com/jhinhq/Jhin">Jhin project repo</a>
 </p>
 
 <p align="center">
@@ -36,13 +36,13 @@ This repo contains only the landing page for Jhin — a single, fully static Nex
 
 ## Page highlights
 
-- **Scroll-assembled hero** — a Three.js constellation of 32 floating isometric cubes that flies together into the Jhin tetris-J as you scroll, scrubbed to scroll position and fully reversible
+- **Anamorphic hero reveal** — a Three.js constellation of 32 isometric cubes, each secretly parked along the sight-line its voxel occupies from one reveal angle; scrolling swings the camera around until the scatter lines up into the Jhin tetris-J, scrubbed to scroll position and fully reversible
 - **Org chart scroll story** — a pinned section where an example organization (Engineering, Marketing, Support, Data) assembles department by department; every node is tappable and shows that agent's granted/denied permissions
 - **Interactive logo** — hover the nav logo and the J breaks into its four cubes and reassembles
 - **Animated install terminal** — types out the install command and simulated output when scrolled into view
 - **Dark & light themes** — follows system preference with a manual toggle; the WebGL scene, terminal, and all surfaces adapt
 - **Fully static** — no server-side logic, deployable anywhere
-- **Accessible motion** — every animation (including the hero pin and WebGL assembly) is disabled or simplified under `prefers-reduced-motion`
+- **Accessible motion** — every animation (including the hero pin and WebGL reveal) is disabled or simplified under `prefers-reduced-motion`; reduced-motion users see the assembled J statically
 
 <p align="center">
   <img src="docs/org-chart.png" alt="Interactive org chart section" width="90%" />
@@ -63,7 +63,7 @@ This repo contains only the landing page for Jhin — a single, fully static Nex
 Requires Node.js 20+.
 
 ```bash
-git clone https://github.com/Teachmetech/Jhin-Landing.git
+git clone https://github.com/jhinhq/Jhin-Landing.git
 cd Jhin-Landing
 npm install
 npm run dev
@@ -88,7 +88,7 @@ app/
   icon.svg          # favicon (square-cropped logo)
 components/
   Hero.tsx          # sticky 2-screen hero, copy fade-out on scroll
-  HeroScene.tsx     # Three.js scene + scroll-driven voxel-J assembly
+  HeroScene.tsx     # Three.js scene + scroll-driven anamorphic J reveal
   OrgChart.tsx      # pinned scroll story, scale-to-fit tree, detail panel
   Workflow.tsx      # ticket-to-merge timeline with scrubbed progress rail
   Install.tsx       # animated terminal + install CTA
