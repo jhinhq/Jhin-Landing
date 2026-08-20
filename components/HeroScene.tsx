@@ -15,9 +15,12 @@ const PALETTE = [
   "#e5d9f2", "#f5efff",
 ];
 
-// --- Assembly target: the Jhin tetris-J, voxelized -------------------------
-// 4 cells (3-stack + foot), each subdivided into 2x2x2 sub-cubes = 32 voxels,
-// laid out in the cube lattice and rotated to the logo's isometric view.
+// --- Anamorphic reveal -----------------------------------------------------
+// Every cube sits somewhere along the sight-line its voxel occupies when the
+// J is viewed head-on — so from the resting side angle the field looks like
+// random chaos. Scrolling swings the camera to the front while each cube
+// glides along its own sight-line to its exact voxel: the chaos was the
+// organization all along, seen from the wrong angle.
 const CELLS: Array<[number, number]> = [
   [0, 0],
   [0, 1],
@@ -28,6 +31,12 @@ const CELL = 1.2; // lattice pitch
 const SUB = 0.6; // sub-cube pitch inside a cell
 const VOX = 0.585; // final world size of each voxel (hairline gaps)
 const ISO = new THREE.Euler(Math.PI / 5.1, Math.PI / 4, 0);
+
+// the reveal camera — where the scroll ends and the J lines up
+const CAM_END = new THREE.Vector3(0, 1.2, 13);
+// the resting camera orbit: azimuth (rad), radius, height
+const ORBIT_START = { theta: -1.1, radius: 16, height: 2.6 };
+const STAGGER = 0.3; // per-cube offset within the convergence
 
 function buildTargets(): THREE.Vector3[] {
   const t: THREE.Vector3[] = [];
@@ -55,9 +64,10 @@ function buildTargets(): THREE.Vector3[] {
 
 type CubeData = {
   mesh: THREE.Mesh;
-  scatter: THREE.Vector3;
-  target: THREE.Vector3;
-  targetScale: number;
+  target: THREE.Vector3; // the voxel this cube resolves to
+  dir: THREE.Vector3; // its sight-line from the reveal camera
+  depth: number; // resting offset along that sight-line
+  restSize: number; // world size at rest (subtends one voxel from CAM_END)
   order: number; // 0..1 stagger position
   speed: number;
   phase: number;
@@ -85,7 +95,12 @@ export default function HeroScene() {
       0.1,
       100
     );
-    camera.position.set(0, 1.2, 13);
+    camera.position.set(
+      Math.sin(ORBIT_START.theta) * ORBIT_START.radius,
+      ORBIT_START.height,
+      Math.cos(ORBIT_START.theta) * ORBIT_START.radius
+    );
+    camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -109,30 +124,41 @@ export default function HeroScene() {
 
     const targets = buildTargets();
     const COUNT = targets.length;
-
-    const cubes: CubeData[] = [];
-    const positions: THREE.Vector3[] = [];
     const rng = (min: number, max: number) => min + Math.random() * (max - min);
 
-    for (let i = 0; i < COUNT; i++) {
-      const size = rng(0.24, 0.62);
-
-      // keep a clear zone behind the headline: reject positions inside the
-      // text ellipse (unless they sit far back in z)
-      let x = 0,
-        y = 0,
-        z = 0,
-        tries = 0;
-      do {
-        x = rng(-9, 9);
-        y = rng(-3.4, 3.8);
-        z = rng(-4.5, 2);
-        tries++;
-      } while (
-        tries < 40 &&
-        Math.pow(x / 5.4, 2) + Math.pow((y - 0.3) / 3.4, 2) < 1 &&
-        z > -2.5
+    // a throwaway camera at the resting angle, used to keep the resting
+    // scatter out of the headline's screen space
+    const restCam = camera.clone();
+    restCam.updateMatrixWorld();
+    const inHeadlineZone = (p: THREE.Vector3) => {
+      const ndc = p.clone().project(restCam);
+      return (
+        Math.pow(ndc.x / 0.62, 2) + Math.pow((ndc.y - 0.05) / 0.5, 2) < 1
       );
+    };
+
+    // --- cubes: one per voxel sight-line -----------------------------------
+    const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+    const cubes: CubeData[] = [];
+    const positions: THREE.Vector3[] = [];
+
+    for (let i = 0; i < COUNT; i++) {
+      const target = targets[i];
+      const rayDir = target.clone().sub(CAM_END).normalize();
+
+      // scatter along the sight-line, in a group in front of the J or one
+      // behind it — the empty middle keeps the resting view's center clear
+      let depth = 0;
+      const pos = new THREE.Vector3();
+      for (let tries = 0; tries < 40; tries++) {
+        depth = Math.random() < 0.45 ? -rng(1.5, 7) : rng(2, 9);
+        pos.copy(target).addScaledVector(rayDir, depth);
+        if (!inHeadlineZone(pos)) break;
+      }
+
+      // size so the cube subtends exactly one voxel from the reveal camera
+      const restSize =
+        (VOX * CAM_END.distanceTo(pos)) / CAM_END.distanceTo(target);
 
       const color = new THREE.Color(
         PALETTE[Math.floor(Math.random() * PALETTE.length)]
@@ -144,36 +170,25 @@ export default function HeroScene() {
         emissive: color,
         emissiveIntensity: 0.12,
       });
-      const geo = new THREE.BoxGeometry(size, size, size);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, y, z);
+      const mesh = new THREE.Mesh(cubeGeo, mat);
+      mesh.position.copy(pos);
+      mesh.scale.setScalar(restSize);
       mesh.rotation.set(ISO.x, ISO.y, 0);
 
       group.add(mesh);
       positions.push(mesh.position);
       cubes.push({
         mesh,
-        scatter: new THREE.Vector3(x, y, z),
-        target: new THREE.Vector3(), // assigned below
-        targetScale: VOX / size,
-        order: 0,
+        target,
+        dir: rayDir,
+        depth,
+        restSize,
+        order: rng(0, 1),
         speed: rng(0.15, 0.4),
         phase: rng(0, Math.PI * 2),
         spin: rng(-0.06, 0.06),
       });
     }
-
-    // pair cubes with voxel targets top-to-bottom to minimize path crossing
-    const cubeIdx = cubes
-      .map((c, i) => i)
-      .sort((a, b) => cubes[b].scatter.y - cubes[a].scatter.y);
-    const targIdx = targets
-      .map((t, i) => i)
-      .sort((a, b) => targets[b].y - targets[a].y);
-    cubeIdx.forEach((ci, k) => {
-      cubes[ci].target.copy(targets[targIdx[k]]);
-      cubes[ci].order = k / (COUNT - 1);
-    });
 
     // connective lines between near neighbours — the "org network"
     const linePositions: number[] = [];
@@ -216,9 +231,9 @@ export default function HeroScene() {
       attributeFilter: ["class"],
     });
 
-    // scroll-driven assembly progress (0 scattered → 1 assembled J)
-    let targetA = 0;
-    let a = 0;
+    // scroll-driven reveal progress (0 oblique chaos → 1 aligned J)
+    let targetA = reduced ? 1 : 0;
+    let a = reduced ? 1 : 0;
     let st: ScrollTrigger | null = null;
     if (!reduced) {
       st = ScrollTrigger.create({
@@ -254,39 +269,57 @@ export default function HeroScene() {
 
     const render = () => {
       const t = clock.getElapsedTime();
-      if (!reduced) {
-        a += (targetA - a) * 0.09;
+      a += (targetA - a) * 0.09;
 
-        for (const c of cubes) {
-          // per-cube staggered progress
-          const ai = smooth(clamp01(a * 1.45 - c.order * 0.45));
-          const inv = 1 - ai;
+      // camera swings from the oblique resting angle to the reveal angle
+      const swing = smooth(clamp01(a / 0.85));
+      const theta = ORBIT_START.theta * (1 - swing);
+      const radius =
+        ORBIT_START.radius + (CAM_END.z - ORBIT_START.radius) * swing;
+      const height =
+        ORBIT_START.height + (CAM_END.y - ORBIT_START.height) * swing;
+      const px = target.x * 0.7;
+      const py = -target.y * 0.5;
+      camera.position.x +=
+        (Math.sin(theta) * radius + px - camera.position.x) * 0.06;
+      camera.position.y += (height + py - camera.position.y) * 0.06;
+      camera.position.z += (Math.cos(theta) * radius - camera.position.z) * 0.06;
+      camera.lookAt(0, 0, 0);
 
-          const bob = Math.sin(t * c.speed + c.phase) * 0.2 * inv;
-          c.mesh.position.set(
-            c.scatter.x + (c.target.x - c.scatter.x) * ai,
-            c.scatter.y + (c.target.y - c.scatter.y) * ai + bob,
-            c.scatter.z + (c.target.z - c.scatter.z) * ai
-          );
-          c.mesh.rotation.y = ISO.y + t * c.spin * inv;
-          const s = 1 + (c.targetScale - 1) * ai;
-          c.mesh.scale.setScalar(s);
-        }
-
-        lineMat.opacity = lineBase * (1 - clamp01(a * 2));
-        lines.visible = a < 0.5;
-
-        group.rotation.y = Math.sin(t * 0.05) * 0.08;
-        camera.position.x += (target.x * 0.7 - camera.position.x) * 0.04;
-        camera.position.y += (1.2 - target.y * 0.5 - camera.position.y) * 0.04;
-        camera.lookAt(0, 0, 0);
+      for (const c of cubes) {
+        // each cube slides home along its own sight-line — motion that is
+        // invisible from the reveal angle; the shape simply sharpens
+        const e = smooth(
+          clamp01(((a - 0.5) / 0.45) * (1 + STAGGER) - c.order * STAGGER)
+        );
+        const depth = c.depth * (1 - e);
+        const bob = Math.sin(t * c.speed + c.phase) * 0.2 * (1 - e);
+        c.mesh.position
+          .copy(c.target)
+          .addScaledVector(c.dir, depth);
+        c.mesh.position.y += bob;
+        c.mesh.rotation.y = ISO.y + t * c.spin * (1 - clamp01(a * 2));
+        c.mesh.scale.setScalar(c.restSize + (VOX - c.restSize) * e);
       }
+
+      lineMat.opacity = lineBase * (1 - clamp01(a * 2));
+      lines.visible = a < 0.5;
+
+      // a soft breathing glow once the J locks in
+      const locked = smooth(clamp01((a - 0.88) / 0.12));
+      for (const c of cubes) {
+        (c.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity =
+          0.12 + locked * (0.2 + 0.08 * Math.sin(t * 1.4 + c.phase));
+      }
+
+      group.rotation.y = Math.sin(t * 0.05) * 0.08 * (1 - swing * 0.7);
       renderer.render(scene, camera);
       if (running && !reduced) raf = requestAnimationFrame(render);
     };
 
     if (reduced) {
-      render(); // single static frame
+      camera.position.copy(CAM_END); // a=1: render() holds the reveal angle
+      render(); // single static frame: the aligned J
     } else {
       raf = requestAnimationFrame(render);
     }
@@ -314,8 +347,8 @@ export default function HeroScene() {
       renderer.dispose();
       lineGeo.dispose();
       lineMat.dispose();
+      cubeGeo.dispose();
       cubes.forEach((c) => {
-        c.mesh.geometry.dispose();
         (c.mesh.material as THREE.Material).dispose();
       });
       container.removeChild(renderer.domElement);

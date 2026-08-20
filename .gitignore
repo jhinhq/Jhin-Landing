@@ -42,6 +42,8 @@ yarn-error.log*
 # local tool state
 /.openai/
 /.vite/
+tsconfig.tsbuildinfo
+/.claude/
 
 # npm is the canonical package manager for this repo
 pnpm-lock.yaml

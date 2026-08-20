@@ -27,39 +27,47 @@ export default function Hero() {
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
-    const ctx = gsap.context(() => {
-      gsap
-        .timeline({ defaults: { ease: "power3.out" } })
-        .from("[data-hero-item]", {
-          y: 42,
-          opacity: 0,
-          duration: 0.9,
-          stagger: 0.12,
-          delay: 0.15,
-        })
-        .from(
-          "[data-hero-marquee]",
-          { opacity: 0, duration: 1 },
-          "-=0.4"
-        );
+    const ctx = gsap.context(() => {}, root);
+    // Defer tween creation past StrictMode's synchronous mount → cleanup →
+    // remount, which can otherwise leave the entrance `from` state (opacity 0)
+    // frozen on the copy.
+    const timer = setTimeout(() => {
+      ctx.add(() => {
+        gsap
+          .timeline({ defaults: { ease: "power3.out" } })
+          .fromTo(
+            "[data-hero-item]",
+            { y: 42, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.9, stagger: 0.12, delay: 0.15 }
+          )
+          .fromTo(
+            "[data-hero-marquee]",
+            { opacity: 0 },
+            { opacity: 1, duration: 1 },
+            "-=0.4"
+          );
 
-      // as the cubes assemble on scroll, the copy hands the stage over
-      if (!reduced) {
-        gsap.to("[data-hero-content]", {
-          opacity: 0,
-          y: -80,
-          scale: 0.97,
-          ease: "none",
-          scrollTrigger: {
-            trigger: root.current,
-            start: "top top",
-            end: () => "+=" + window.innerHeight * 0.55,
-            scrub: true,
-          },
-        });
-      }
-    }, root);
-    return () => ctx.revert();
+        // as the cubes assemble on scroll, the copy hands the stage over
+        if (!reduced) {
+          gsap.to("[data-hero-content]", {
+            opacity: 0,
+            y: -80,
+            scale: 0.97,
+            ease: "none",
+            scrollTrigger: {
+              trigger: root.current,
+              start: "top top",
+              end: () => "+=" + window.innerHeight * 0.55,
+              scrub: true,
+            },
+          });
+        }
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      ctx.revert();
+    };
   }, []);
 
   return (
